@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}SnapMan — 記錄{% endblock %}
+{% block page_title %}記錄{% endblock %}
+{% block content %}
+
+<style>
+  /* 頁籤列（參考 WEB_ERS）：仿側欄 active 樣式（底線 accent） */
+  .log-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border);
+              margin-bottom:16px; }
+  .log-tabs button { background:none; border:none; border-radius:0;
+    padding:9px 16px; font-size:13.5px; color:var(--text2); cursor:pointer;
+    border-bottom:3px solid transparent; margin-bottom:-1px; }
+  .log-tabs button:hover { color:var(--text); background:none; }
+  .log-tabs button.active { color:var(--accent); font-weight:600;
+    border-bottom-color:var(--accent); }
+</style>
+
+<div class="log-tabs">
+  <button type="button" data-pane="ops" class="active">操作稽核（{{ ops|length }}）</button>
+  <button type="button" data-pane="system">系統事件（{{ sys_events|length }}）</button>
+</div>
+
+<div class="card" id="pane-ops">
+  <h2>操作稽核（最近 {{ ops|length }} 筆）— 登入、執行、設定、副本操作</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>時間</th><th style="width:140px">使用者</th><th style="width:120px">來源 IP</th><th>動作</th><th>內容</th></tr></thead>
+    <tbody>
+      {% for a in ops %}
+      <tr>
+        <td class="muted" style="font-family:var(--mono); white-space:nowrap">{{ a.ts }}</td>
+        <td>{{ a.user or '—' }}</td>
+        <td class="muted" style="font-family:var(--mono)">{{ a.ip or '—' }}</td>
+        <td><code>{{ a.action }}</code></td>
+        <td class="muted">{{ a.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">尚無紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card" id="pane-system" style="display:none">
+  <h2>系統事件（最近 {{ sys_events|length }} 筆）— 排程觸發、保留策略、串接、啟動復原</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>時間</th><th style="width:140px">來源</th><th>動作</th><th>內容</th></tr></thead>
+    <tbody>
+      {% for a in sys_events %}
+      <tr>
+        <td class="muted" style="font-family:var(--mono); white-space:nowrap">{{ a.ts }}</td>
+        <td>{{ a.user }}</td>
+        <td><code>{{ a.action }}</code></td>
+        <td class="muted">{{ a.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">尚無紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script>
+  // 頁籤切換（資料已一次載入，純前端切換）；#system 記住所在頁籤，F5 不跳掉
+  (function () {
+    const tabs = document.querySelectorAll('.log-tabs button');
+    function show(pane) {
+      tabs.forEach(b => b.classList.toggle('active', b.dataset.pane === pane));
+      document.getElementById('pane-ops').style.display =
+        pane === 'ops' ? '' : 'none';
+      document.getElementById('pane-system').style.display =
+        pane === 'system' ? '' : 'none';
+    }
+    tabs.forEach(b => b.addEventListener('click', () => {
+      show(b.dataset.pane);
+      history.replaceState(null, '', b.dataset.pane === 'system' ? '#system' : '#ops');
+    }));
+    if (location.hash === '#system') show('system');
+  })();
+</script>
+
+{% endblock %}

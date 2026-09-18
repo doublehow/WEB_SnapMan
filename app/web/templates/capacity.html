@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}SnapMan — 容量{% endblock %}
+{% block page_title %}容量{% endblock %}
+{% block content %}
+
+{% for d in items %}
+{% if d.error %}
+<div class="card" style="border-color:var(--deny)">
+  <h2>{{ d.name }}</h2>
+  <span class="status failed">錯誤</span> {{ d.error }}
+  {% if d.jobs %}<div class="muted" style="margin-top:8px">引用此 datastore 的任務：{{ d.jobs }}（請檢查任務的目的 vCenter / datastore 設定）</div>{% endif %}
+</div>
+{% else %}
+<div class="card">
+  <h2>{{ d.name }}</h2>
+  {% if d.jobs %}<div class="muted" style="margin:-6px 0 10px">任務：{{ d.jobs }}</div>{% endif %}
+  <div style="display:flex; gap:28px; flex-wrap:wrap; margin-bottom:12px">
+    <div><label style="margin:0">總容量</label><div style="font-size:20px; font-weight:600">{{ d.capacity }}</div></div>
+    <div><label style="margin:0">剩餘</label><div style="font-size:20px; font-weight:600">{{ d.free }}</div></div>
+    <div><label style="margin:0">SnapMan 副本</label>
+      <div style="font-size:20px; font-weight:600">{{ d.clone_count }} 份 / {{ d.clone_logical }}</div></div>
+  </div>
+  <div style="background:var(--bg3); border:1px solid var(--border); border-radius:999px; height:12px; overflow:hidden; margin-bottom:4px">
+    <div style="height:100%; width:{{ d.used_pct }}%;
+                background:{{ 'var(--deny)' if d.used_pct > 90 else ('var(--warn)' if d.used_pct > 75 else 'var(--accent)') }}"></div>
+  </div>
+  <div class="muted" style="margin-bottom:14px">已用 {{ d.used_pct }}%</div>
+
+  {% if d.files %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>副本檔案</th><th>邏輯大小</th><th>修改時間</th></tr></thead>
+    <tbody>
+      {% for f in d.files %}
+      <tr>
+        <td class="muted" style="font-family:var(--mono)">{{ f.name }}</td>
+        <td class="muted">{{ f.size_h }}</td>
+        <td class="muted">{{ f.modified }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <p class="muted" style="margin-top:10px">
+    邏輯大小為未去重值；實際占用與去重節省率請見儲存端（如 NAS 管理介面的儲存效率報表）。
+  </p>
+</div>
+{% endif %}
+{% else %}
+<div class="card"><p class="muted">尚無任務指定目標 datastore</p></div>
+{% endfor %}
+
+{% endblock %}

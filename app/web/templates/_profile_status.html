@@ -1,0 +1,47 @@
+{% macro power_badge(state) %}
+  {% if state == 'poweredOn' %}<span class="status done">開機</span>
+  {% else %}<span class="status failed">{{ state }}</span>{% endif %}
+{% endmacro %}
+{% macro bool_badge(ok, label_ok, label_no) %}
+  {% if ok %}<span class="status done">{{ label_ok }}</span>
+  {% else %}<span class="status failed">{{ label_no }}</span>{% endif %}
+{% endmacro %}
+
+{% if ok %}
+<div style="display:flex; gap:10px; flex-wrap:wrap; font-size:12px">
+  <div style="flex:1; min-width:220px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:8px 10px">
+    <div class="muted" style="margin-bottom:4px">來源 {{ source.name }}</div>
+    {% if source.is_template %}
+      <span class="status done">範本（靜態，不需快照/Tools）</span>
+    {% else %}
+      {{ power_badge(source.power_state) }}
+      {{ bool_badge(source.tools_running, 'Tools ✓', 'Tools ✗') }}
+    {% endif %}
+    {% if source.writer is not none %}{{ bool_badge(source.writer, 'SQL Writer ✓', 'SQL Writer ✗') }}{% endif %}
+  </div>
+  <div style="flex:1; min-width:220px; background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:8px 10px">
+    <div class="muted" style="margin-bottom:4px">{{ '複本' if vmsync else '目標' }} {{ target.name }}</div>
+    {% if target.missing %}
+      <span class="status pending">尚未建立（首次同步後出現）</span>
+    {% elif vmsync and target.is_template %}
+      <span class="status done">範本（standby，正常）</span>
+    {% elif vmsync and target.power_state != 'poweredOn' %}
+      {# 整機同步的複本以關機 standby 為正常狀態 #}
+      <span class="status done">關機（standby，正常）</span>
+    {% else %}
+      {{ power_badge(target.power_state) }}
+      {% if not vmsync %}{{ bool_badge(target.tools_running, 'Tools ✓', 'Tools ✗') }}{% endif %}
+      {% if vmsync %}<span class="status failed">開機中（複本不應開機，覆蓋保護將擋下次同步）</span>{% endif %}
+    {% endif %}
+  </div>
+  {% if xvm %}
+  <div style="flex:1 1 100%; background:var(--bg3); border:1px solid {{ 'var(--border)' if xvm.ok else 'var(--deny)' }}; border-radius:8px; padding:8px 10px">
+    <div class="muted" style="margin-bottom:4px">XVM 相容性預檢</div>
+    <span class="status {{ 'done' if xvm.ok else 'failed' }}">{{ '通過' if xvm.ok else '未通過' }}</span>
+    <span class="muted">{{ xvm.msg }}</span>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="status failed" style="display:inline-block">無法取得狀態：{{ error }}</div>
+{% endif %}

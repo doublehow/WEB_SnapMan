@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}SnapMan — 工作階段{% endblock %}
+{% block page_title %}工作階段{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>執行歷史（最近 {{ runs|length }} 筆）</h2>
+  <div style="margin-bottom:10px"><a class="btn" href="/sessions.csv">⬇ 匯出 CSV</a></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>任務</th><th>類型</th><th>狀態</th><th>開始時間</th><th>耗時</th><th>錯誤</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td>
+        <td>{{ r.profile }}</td>
+        <td class="muted">{{ r.kind_label }}</td>
+        <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+        <td class="muted">{{ r.started_at }}</td>
+        <td class="muted">{{ r.duration }}</td>
+        <td class="muted" style="max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"
+            title="{{ r.error }}">{{ r.error or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">尚無執行紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% endblock %}

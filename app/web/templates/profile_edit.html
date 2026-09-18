@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — 編輯 {{ p.name }}{% endblock %}
+{% block page_title %}編輯任務 — {{ p.name }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>編輯 Profile — {{ p.name }}</h2>
+
+  {% if error %}
+  <div style="margin-bottom:12px; color:var(--deny); font-size:13px; display:flex; align-items:center; gap:6px">
+    {{ icon('alert') }} {{ error }}</div>
+  {% endif %}
+
+  <!-- 來源/目標 VM 清單各依其 vCenter 載入並隨選擇連動 -->
+  <datalist id="vm-list-src" hx-get="/partials/options/vms" hx-target="this" hx-swap="innerHTML"
+            hx-trigger="load, change from:#vc-select" hx-include="#vc-select"></datalist>
+  <datalist id="vm-list-tgt" hx-get="/partials/options/vms" hx-target="this" hx-swap="innerHTML"
+            hx-trigger="load, change from:#vc-select-t" hx-include="#vc-select-t"></datalist>
+  <datalist id="ds-list" hx-get="/partials/options/datastores" hx-target="this" hx-swap="innerHTML"
+            hx-trigger="load, change from:#vc-select-t" hx-include="#vc-select-t"></datalist>
+  <datalist id="ds-list-src" hx-get="/partials/options/datastores" hx-target="this" hx-swap="innerHTML"
+            hx-trigger="load, change from:#vc-select" hx-include="#vc-select"></datalist>
+  <datalist id="net-list" hx-get="/partials/options/networks" hx-target="this" hx-swap="innerHTML"
+            hx-trigger="load, change from:#vc-select-t" hx-include="#vc-select-t"></datalist>
+  <datalist id="disk-list"></datalist>
+
+  <p class="muted" style="margin:0 0 12px">
+    VM / Datastore 清單依所選 vCenter 自動載入。
+    <b>跨 vCenter 任務</b>：clone 目的 datastore 須為共享 NFS，同時掛給兩座 vCenter 的主機且同名；
+    <b>整機同步</b>走跨 VC 搬遷或 OVF 串流，免共享儲存。
+  </p>
+
+  <form method="post" action="/profiles/{{ p.id }}/edit">
+    <fieldset class="fs">
+      <legend>基本</legend>
+      <div class="grid">
+        <div><label>名稱</label><input name="name" value="{{ p.name }}" required></div>
+        <div>
+          <label>任務類型</label>
+          <select name="job_type" id="job-type">
+            <option value="disk" {% if p.job_type != 'vmsync' %}selected{% endif %}>資料碟副本（clone 資料 VMDK 掛給目標 VM）</option>
+            <option value="vmsync" {% if p.job_type == 'vmsync' %}selected{% endif %}>整機同步（複製完整 VM 到另一座 vCenter）</option>
+          </select>
+        </div>
+        <div>
+          <label>任務串接（本任務成功後執行）</label>
+          <select name="chain_next_id">
+            <option value="0">— 無 —</option>
+            {% for o in others %}
+            <option value="{{ o.id }}" {% if p.chain_next_id == o.id %}selected{% endif %}>{{ o.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="fs-pair">
+      <fieldset class="fs src">
+        <legend>來源</legend>
+        <div class="grid g2">
+          <div>
+            <label>來源 vCenter</label>
+            <select name="source_vcenter_id" id="vc-select">
+              {% for v in vcenters %}
+              <option value="{{ v.id }}" {% if p.source_vcenter_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label>來源 VM</label>
+            <input name="source_vm" list="vm-list-src" value="{{ p.source_vm }}" required autocomplete="off"
+                   hx-get="/partials/options/disks" hx-trigger="change" hx-target="#disk-list"
+                   hx-swap="innerHTML" hx-include="this, #vc-select">
+          </div>
+          <div class="jt-disk">
+            <label>來源資料碟（VMDK）</label>
+            <input name="source_data_disk" list="disk-list" value="{{ p.source_data_disk }}" autocomplete="off"
+                   placeholder="選來源 VM 後自動帶出">
+          </div>
+          <div class="jt-disk"><label>來源 SQL 執行個體（選填）</label>
+            <input name="source_sql_instance" value="{{ p.source_sql_instance }}" placeholder="例：SQLEXPRESS；留空 = 預設執行個體" autocomplete="off"></div>
+          <div class="jt-disk span"><label>DB 清單（逗號分隔）</label><input name="databases" value="{{ p.databases }}">
+            <small class="muted">SQL Server 上的資料庫名稱，檔案路徑自動取自來源的 sys.master_files；
+            <b>留空 = 檔案磁碟分享模式</b>（跳過所有 SQL 步驟，目標只掛碟 + 指派碟號）</small></div>
+          <div class="span"><label>來源側暫存 datastore（xvc / 整機同步）</label>
+            <input name="staging_datastore" list="ds-list-src" value="{{ p.staging_datastore }}"
+                   autocomplete="off" placeholder="留空 = 自動用來源碟當下所在 datastore">
+            <small class="muted">留空時每輪自動掃描，來源 VM 搬 datastore 後自動跟隨</small></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="fs dst">
+        <legend>目的</legend>
+        <div class="grid g2">
+          <div>
+            <label>目標 vCenter</label>
+            <select name="target_vcenter_id" id="vc-select-t">
+              {% for v in vcenters %}
+              <option value="{{ v.id }}" {% if p.target_vcenter_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="jt-disk"><label>目標 VM</label><input name="target_vm" list="vm-list-tgt" value="{{ p.target_vm }}" autocomplete="off"></div>
+          <div class="jt-vmsync" style="display:none">
+            <label>複本名稱（目標端 VM 名）</label>
+            <input name="replica_name" value="{{ p.replica_name }}" autocomplete="off"
+                   placeholder="留空 = {來源VM}-replica">
+            <small class="muted">目標端只保留最新一份；換手成功才刪上一份，複本保持關機</small>
+          </div>
+          <div><label>目的 datastore</label><input name="target_datastore" list="ds-list" value="{{ p.target_datastore }}" autocomplete="off">
+            <small class="muted">資料碟副本可留空；整機同步必填（複本落點）</small></div>
+          <div class="jt-disk"><label>目標碟號</label><input name="target_drive_letter" value="{{ p.target_drive_letter }}"
+                 maxlength="1" style="text-transform:uppercase">
+            <small class="muted">clone 掛載後指派的碟號，不可與目標 VM 既有磁碟衝突</small></div>
+          <div class="jt-vmsync" style="display:none">
+            <label>目標網路（portgroup）</label>
+            <input name="target_network" list="net-list" value="{{ p.target_network }}" autocomplete="off"
+                   placeholder="複本網卡要接的目標 portgroup">
+          </div>
+          <div class="jt-disk"><label>目標 SQL 執行個體（選填）</label>
+            <input name="target_sql_instance" value="{{ p.target_sql_instance }}" placeholder="例：SQLEXPRESS；留空 = 預設執行個體" autocomplete="off"></div>
+          <div class="jt-disk">
+            <label>跨 VC 傳輸模式</label>
+            <select name="transfer_mode">
+              <option value="shared" {% if p.transfer_mode == 'shared' %}selected{% endif %}>共享 NFS datastore（同一 export 同名掛雙邊）</option>
+              <option value="xvc" {% if p.transfer_mode == 'xvc' %}selected{% endif %}>XVM 搬遷（免共享儲存，主機版本 / build 須與對端 vCenter 相容）</option>
+            </select>
+            <small class="muted">xvc 由來源側主機發起，其版本不得高於目的端 vCenter</small>
+          </div>
+          <div class="jt-vmsync span" style="display:none">
+            <label>傳輸方式（跨 vCenter）</label>
+            <select name="vmsync_transfer">
+              <option value="xvc" {% if p.transfer_mode != 'ovf' %}selected{% endif %}>XVM 搬遷（Cross-vCenter vMotion；兩端主機須不比對方 vCenter 新）</option>
+              <option value="ovf" {% if p.transfer_mode == 'ovf' %}selected{% endif %}>OVF 串流（經 SnapMan 中轉，免版本相容）</option>
+            </select>
+            <small class="muted">版本不相容（如 8.0 主機 → 7.0 vCenter）請選 OVF 串流；
+            vTPM/加密 VM 只能走 XVM</small>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+
+    <fieldset class="fs">
+      <legend>排程</legend>
+      <div class="grid">
+        <div>
+          <label class="toggle" style="margin-top:26px">
+            <input type="checkbox" name="schedule_enabled" {% if p.schedule_enabled %}checked{% endif %}>
+            <span class="track"><span class="knob"></span></span> 啟用排程
+          </label>
+        </div>
+        <div><label>排程模式</label>
+          <select name="schedule_mode" id="sched-mode">
+            <option value="daily" {% if p.schedule_mode != 'once' %}selected{% endif %}>每日</option>
+            <option value="once" {% if p.schedule_mode == 'once' %}selected{% endif %}>一次性（執行後自動停用）</option>
+          </select></div>
+        <div><label>排程時間（顯示時區，24 小時制）</label>
+          {% set sh = p.schedule_time[:2] if p.schedule_time else '' %}
+          {% set sm = p.schedule_time[3:5] if p.schedule_time else '' %}
+          <div style="display:flex; gap:6px">
+            <select name="schedule_hh" style="flex:1">
+              <option value="">— 時 —</option>
+              {% for h in range(24) %}{% set hh = '%02d' % h %}
+              <option value="{{ hh }}" {% if hh == sh %}selected{% endif %}>{{ hh }}</option>{% endfor %}
+            </select>
+            <select name="schedule_mm" style="flex:1">
+              {% for m in range(0, 60, 5) %}{% set mm = '%02d' % m %}
+              <option value="{{ mm }}" {% if mm == sm %}selected{% endif %}>{{ mm }}</option>{% endfor %}
+              {% if sm and (sm|int) % 5 != 0 %}<option value="{{ sm }}" selected>{{ sm }}</option>{% endif %}
+            </select>
+          </div>
+        </div>
+        <div class="sched-once" style="display:none"><label>執行日期（一次性）</label>
+          <input type="date" name="schedule_date" value="{{ p.schedule_date }}">
+          <small class="muted">到達指定日期＋時間即執行一次；過期未跑（如服務停機）會補跑</small></div>
+      </div>
+    </fieldset>
+
+    <fieldset class="fs jt-disk">
+      <legend>副本保留與驗證</legend>
+      <div class="grid">
+        <div><label>保留副本數</label><input type="number" name="keep_copies" value="{{ p.keep_copies }}" min="1" max="30">
+          <small class="muted">含掛載中的一份；多的舊副本每日自動刪除</small></div>
+        <div>
+          <label class="toggle" style="margin-top:26px">
+            <input type="checkbox" name="verify_enabled" {% if p.verify_enabled %}checked{% endif %}>
+            <span class="track"><span class="knob"></span></span> 啟用副本驗證排程
+          </label>
+          <small class="muted">定期掛載最舊保留副本跑 DBCC，驗畢自動換回</small>
+        </div>
+        <div><label>驗證週期</label>
+          <select name="verify_weekday">
+            {% for v, lbl in [(7,'每天'),(0,'每週一'),(1,'每週二'),(2,'每週三'),(3,'每週四'),(4,'每週五'),(5,'每週六'),(6,'每週日')] %}
+            <option value="{{ v }}" {% if p.verify_weekday == v %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select></div>
+        <div><label>驗證時間（顯示時區，24 小時制）</label>
+          {% set vh = p.verify_time[:2] if p.verify_time else '' %}
+          {% set vm = p.verify_time[3:5] if p.verify_time else '' %}
+          <div style="display:flex; gap:6px">
+            <select name="verify_hh" style="flex:1">
+              <option value="">— 時 —</option>
+              {% for h in range(24) %}{% set hh = '%02d' % h %}
+              <option value="{{ hh }}" {% if hh == vh %}selected{% endif %}>{{ hh }}</option>{% endfor %}
+            </select>
+            <select name="verify_mm" style="flex:1">
+              {% for m in range(0, 60, 5) %}{% set mm = '%02d' % m %}
+              <option value="{{ mm }}" {% if mm == vm %}selected{% endif %}>{{ mm }}</option>{% endfor %}
+              {% if vm and (vm|int) % 5 != 0 %}<option value="{{ vm }}" selected>{{ vm }}</option>{% endif %}
+            </select>
+          </div>
+        </div>
+        <div class="span"><label>演練自訂驗證 SQL（選填；DBCC 通過後執行，非零 exit = 失敗）</label>
+          <input name="drill_query" value="{{ p.drill_query }}"
+                 placeholder="例：IF (SELECT COUNT(*) FROM [MyDB].dbo.Config) = 0 THROW 50000,'empty',1;">
+        </div>
+        <div>
+          <label class="toggle" style="margin-top:26px">
+            <input type="checkbox" name="archive_enabled" {% if p.archive_enabled %}checked{% endif %}>
+            <span class="track"><span class="knob"></span></span> 啟用副本歸檔
+          </label>
+          <small class="muted">每日成功後把當日副本複製到歸檔 datastore</small>
+        </div>
+        <div><label>歸檔 datastore</label>
+          <input name="archive_datastore" list="ds-list" value="{{ p.archive_datastore }}" autocomplete="off"></div>
+        <div><label>歸檔保留份數</label>
+          <input type="number" name="archive_keep" value="{{ p.archive_keep }}" min="1" max="60"></div>
+      </div>
+    </fieldset>
+
+    {% if p.last_clone_path %}
+    <p class="muted" style="margin:0 0 14px">
+      目前掛載中：<code>{{ p.last_clone_path }}</code>（副本的掛載/刪除請至「副本」頁管理）
+    </p>
+    {% endif %}
+
+    <!-- 相容層：時/分下拉同步到 HH:MM 隱藏欄位（新舊後端皆可正確收值） -->
+    <input type="hidden" name="schedule_time" value="{{ p.schedule_time }}">
+    <input type="hidden" name="verify_time" value="{{ p.verify_time }}">
+    <div style="display:flex; gap:8px">
+      {% if can_write %}<button type="submit">{{ icon('save') }} 儲存</button>{% endif %}
+      <a class="btn" href="/jobs">取消</a>
+    </div>
+  </form>
+  <script>
+    (function () {
+      function bindTime(hh, mm, hidden) {
+        const h = document.querySelector('select[name=' + hh + ']');
+        const m = document.querySelector('select[name=' + mm + ']');
+        const t = document.querySelector('input[name=' + hidden + ']');
+        if (!h || !m || !t) return;
+        const sync = () => { t.value = h.value ? h.value + ':' + m.value : ''; };
+        h.addEventListener('change', sync);
+        m.addEventListener('change', sync);
+      }
+      bindTime('schedule_hh', 'schedule_mm', 'schedule_time');
+      bindTime('verify_hh', 'verify_mm', 'verify_time');
+      // 任務類型切換：資料碟副本 / 整機同步各自顯示對應欄位（含整個分區）
+      const jt = document.getElementById('job-type');
+      if (jt) {
+        const apply = () => {
+          const vs = jt.value === 'vmsync';
+          document.querySelectorAll('.jt-disk').forEach(el => { el.style.display = vs ? 'none' : ''; });
+          document.querySelectorAll('.jt-vmsync').forEach(el => { el.style.display = vs ? '' : 'none'; });
+        };
+        jt.addEventListener('change', apply);
+        apply();
+      }
+      // 排程模式切換：一次性才顯示日期欄
+      const sm = document.getElementById('sched-mode');
+      if (sm) {
+        const applySm = () => {
+          document.querySelectorAll('.sched-once').forEach(el => {
+            el.style.display = sm.value === 'once' ? '' : 'none';
+          });
+        };
+        sm.addEventListener('change', applySm);
+        applySm();
+      }
+    })();
+  </script>
+</div>
+
+{% endblock %}

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SnapMan{% endblock %}</title>
+  <script src="/static/htmx.min.js"></script>
+  <script>
+    // 主題須在 CSS 套用前決定，避免載入閃爍：localStorage > 系統偏好
+    (function () {
+      var t = localStorage.getItem('snapman-theme');
+      if (t !== 'dark' && t !== 'light') {
+        t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark' : 'light';
+      }
+      document.documentElement.dataset.theme = t;
+      window.snapmanToggleTheme = function () {
+        var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('snapman-theme', next);
+      };
+    })();
+  </script>
+  <style>
+    :root {
+      /* 版面採 Veeam 式側欄主控台；配色維持原設計語言（淺色 / 藍色 accent） */
+      color-scheme:light;
+      --bg:#f2f4f9; --bg2:#e8ebf4; --bg3:#dce1ee; --border:#c4cadb;
+      --text:#1a2035; --text2:#4a5572; --text3:#8a95aa;
+      --accent:#2d6ee0; --accent2:#1f56c4;
+      --allow:#16a34a; --deny:#dc2626; --warn:#b45309;
+      --side-bg:#1a2035; --side-bg2:#252d4a; --side-text:#9aa3bd; --side-active:#ffffff;
+      --row-line:rgba(211,218,227,.6); --row-hover:rgba(233,237,242,.6);
+      --radius:8px;
+      --mono:'Cascadia Code','Fira Code','JetBrains Mono',ui-monospace,monospace;
+      /* 舊變數別名（相容既有模板） */
+      --card:var(--bg2); --line:var(--border); --fg:var(--text); --mut:var(--text3);
+      --ok:var(--allow); --run:var(--accent); --fail:var(--deny); --amber:var(--warn);
+    }
+    /* ===== 暗黑模式（html[data-theme=dark]，切換鈕在 topbar）=====
+       同一套設計語言的深色版：accent 調亮以維持對比；
+       accent2 是 hover 色，深色下改為「更亮」而非更暗 */
+    html[data-theme="dark"] {
+      color-scheme:dark;
+      --bg:#111627; --bg2:#1a2035; --bg3:#242c49; --border:#333d63;
+      --text:#e7ebf7; --text2:#b3bcd6; --text3:#7d89ab;
+      --accent:#5b8def; --accent2:#7ba4f5;
+      --allow:#34d399; --deny:#f87171; --warn:#fbbf24;
+      --side-bg:#0f1425; --side-bg2:#1c2440; --side-text:#8d97b8;
+      --row-line:rgba(64,74,110,.5); --row-hover:rgba(36,44,73,.6);
+    }
+    * { box-sizing:border-box; }
+    html, body { height:100%; }
+    body { margin:0; font-family:'Segoe UI', system-ui, sans-serif; font-size:14px;
+           background:var(--bg); color:var(--text); display:flex; }
+
+    /* ===== 左側導覽欄 ===== */
+    aside {
+      width:212px; flex-shrink:0; background:var(--side-bg); color:var(--side-text);
+      display:flex; flex-direction:column; min-height:100vh;
+    }
+    .brand { display:flex; align-items:center; gap:9px; padding:16px 18px 14px;
+             color:#fff; font-weight:600; font-size:16px;
+             border-bottom:1px solid rgba(255,255,255,.07); }
+    .brand svg { color:var(--accent); flex-shrink:0; }
+    .brand small { display:block; font-weight:400; font-size:10px; color:var(--side-text); }
+    nav { padding:10px 0; flex:1; }
+    nav a {
+      display:flex; align-items:center; gap:11px; padding:10px 18px;
+      color:var(--side-text); text-decoration:none; font-size:13.5px;
+      border-left:3px solid transparent; transition:all .12s;
+    }
+    nav a svg { flex-shrink:0; opacity:.8; }
+    nav a:hover { background:var(--side-bg2); color:var(--side-active); }
+    nav a.active { background:var(--side-bg2); color:var(--side-active);
+                   border-left-color:var(--accent); }
+    nav a.active svg { opacity:1; color:var(--accent); }
+    .side-foot { padding:12px 18px; font-size:11px; color:#6b7585;
+                 border-top:1px solid rgba(255,255,255,.07); }
+
+    /* ===== 右側主區 ===== */
+    .main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:100vh; }
+    .topbar {
+      display:flex; align-items:center; gap:12px; padding:0 22px; height:52px;
+      background:var(--bg2); border-bottom:1px solid var(--border); flex-shrink:0;
+    }
+    a { color:var(--accent); }
+    .topbar h1 { margin:0; font-size:16px; font-weight:600; }
+    .topbar-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+    .badge { font-size:11px; padding:2px 9px; border-radius:999px; font-weight:600; }
+    .badge.vc { background:rgba(45,110,224,.12); color:var(--accent); font-family:var(--mono); }
+    .badge.role { background:var(--bg3); color:var(--text2); }
+    .content { flex:1; overflow-y:auto; padding:22px; }
+
+    /* Cards */
+    .card { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+            padding:18px; margin-bottom:18px; }
+    .card h2 { margin:0 0 14px; font-size:11px; font-weight:600; color:var(--text3);
+               text-transform:uppercase; letter-spacing:.08em; }
+
+    /* Dashboard tiles */
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));
+             gap:14px; margin-bottom:18px; }
+    .tile { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+            padding:14px 16px; position:relative; }
+    .tile .t-icon { position:absolute; top:12px; right:12px; width:30px; height:30px;
+                    border-radius:8px; display:flex; align-items:center; justify-content:center;
+                    background:rgba(45,110,224,.10); color:var(--accent); }
+    .tile.ok .t-icon { background:rgba(22,163,74,.12); color:var(--allow); }
+    .tile.bad .t-icon { background:rgba(220,38,38,.12); color:var(--deny); }
+    .tile .t-label { font-size:11px; color:var(--text3); text-transform:uppercase;
+                     letter-spacing:.06em; margin-bottom:6px; }
+    .tile .t-value { font-size:26px; font-weight:600; line-height:1.1; }
+    .tile .t-sub { font-size:11px; color:var(--text3); margin-top:4px; }
+    .tile.ok .t-value { color:var(--allow); }
+    .tile.bad .t-value { color:var(--deny); }
+
+    /* Tables */
+    table { width:100%; border-collapse:collapse; }
+    th { text-align:left; padding:7px 12px; font-size:11px; font-weight:500; color:var(--text3);
+         text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); }
+    td { padding:9px 12px; font-size:13.5px; border-bottom:1px solid var(--row-line);
+         vertical-align:middle; }
+    tr:hover td { background:var(--row-hover); }
+
+    /* Buttons：bare <button> = 主要動作；.btn = 次要 */
+    button, .btn { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+                   font-size:13px; border-radius:var(--radius); padding:7px 14px;
+                   border:1px solid var(--border); background:var(--bg3); color:var(--text2);
+                   text-decoration:none; transition:all .15s; white-space:nowrap; }
+    .btn:hover { background:var(--bg); border-color:var(--accent); color:var(--text); }
+    button:not(.btn) { background:var(--accent); border-color:var(--accent2); color:#fff; }
+    button:not(.btn):hover { background:var(--accent2); }
+    .btn.primary { background:var(--accent); border-color:var(--accent2); color:#fff; }
+    .btn.primary:hover { background:var(--accent2); }
+
+    /* Forms */
+    input, textarea, select {
+      width:100%; background:var(--bg3); border:1px solid var(--border); color:var(--text);
+      padding:8px 11px; border-radius:var(--radius); font-size:13px; outline:none;
+      font-family:inherit; }
+    input:focus, textarea:focus, select:focus { border-color:var(--accent); }
+    input[type=checkbox] { width:auto; }
+    label { display:block; font-size:11px; color:var(--text3); text-transform:uppercase;
+            letter-spacing:.06em; margin:10px 0 4px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+    .grid > * { min-width:0; }
+    .grid.g2 { grid-template-columns:1fr 1fr; }
+    .grid .span { grid-column:1 / -1; }
+    /* 任務表單分區（基本 / 來源 / 目的 / 排程 / 副本保留）；來源與目的左右並排對照 */
+    fieldset.fs { border:1px solid var(--border); border-radius:8px; padding:2px 14px 14px;
+                  margin:0 0 14px; min-width:0; }
+    fieldset.fs legend { font-size:11px; font-weight:600; color:var(--text3);
+                         text-transform:uppercase; letter-spacing:.08em; padding:0 6px; }
+    fieldset.fs.src { border-left:3px solid var(--accent); }
+    fieldset.fs.dst { border-left:3px solid var(--allow); }
+    fieldset.fs.src legend { color:var(--accent); }
+    fieldset.fs.dst legend { color:var(--allow); }
+    .fs-pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .fs-pair fieldset.fs { margin:0; }
+    .fs-pair + fieldset.fs, .fs-pair { margin-bottom:14px; }
+    /* 任務類型膠囊 */
+    .type-pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 9px;
+                 border-radius:999px; white-space:nowrap; }
+    .type-pill.disk { background:rgba(45,110,224,.12); color:var(--accent); }
+    .type-pill.on { background:rgba(22,163,74,.14); color:var(--allow); }
+    .type-pill.off { background:var(--bg3); color:var(--text3); }
+    .type-pill.vmsync { background:rgba(124,58,237,.12); color:#7c3aed; }
+    html[data-theme="dark"] .type-pill.vmsync { color:#a78bfa; }
+    /* 表格欄位輔助：不換行、雙行（vCenter / 來源→目標）、截斷 */
+    .nowrap { white-space:nowrap; }
+    .two-line { white-space:nowrap; line-height:1.4; }
+    .two-line .arrow { color:var(--text3); margin-right:4px; }
+    .ellipsis { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    svg.ic { flex-shrink:0; }
+
+    /* Status badges */
+    .status { display:inline-flex; align-items:center; font-size:11px; font-weight:600;
+              padding:2px 9px; border-radius:999px; }
+    .status.pending { background:var(--bg3); color:var(--text2); }
+    .status.running { background:rgba(45,110,224,.14); color:var(--accent);
+                      animation:pulse 1.2s ease-in-out infinite; }
+    .status.done, .status.success { background:rgba(22,163,74,.14); color:var(--allow); }
+    .status.failed { background:rgba(220,38,38,.14); color:var(--deny); }
+    .status.skipped { background:var(--bg3); color:var(--text3); }
+    .status.stopped { background:rgba(180,83,9,.14); color:var(--warn); }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.5;} }
+
+    /* 工作流步驟編號徽章（綠底方塊，取代 ①~⑩ 字元） */
+    .step-no { display:inline-flex; align-items:center; justify-content:center;
+               min-width:22px; height:22px; padding:0 5px; margin-right:7px;
+               border-radius:6px; background:var(--allow); color:#fff;
+               font-size:12px; font-weight:700; font-family:var(--mono);
+               vertical-align:middle; }
+    html[data-theme="dark"] .step-no { background:#15803d; }
+    /* 事件日誌用的小號徽章；.log-ln = 日誌行（保留自動換行） */
+    .step-no.sm { min-width:17px; height:16px; padding:0 4px; margin-right:4px;
+                  border-radius:4px; font-size:10.5px; }
+    .log-ln { white-space:pre-wrap; }
+
+    .muted { color:var(--text3); font-size:12px; }
+    code { font-family:var(--mono); background:var(--bg3); padding:1px 5px; border-radius:4px;
+           font-size:12px; }
+
+    /* ===== RWD ===== */
+    /* 表格橫向捲動容器（窄螢幕時整張表在卡片內左右捲，不撐破版面） */
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    /* 儀表板雙圖表（桌面並排、窄螢幕堆疊） */
+    .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    /* 設定頁 vCenter 列（名稱/主機/使用者/密碼/TLS/儲存/刪除） */
+    .vc-grid { display:grid; grid-template-columns:1fr 1.4fr 1.4fr 1fr auto auto auto;
+               gap:8px; align-items:end; }
+    /* 設定頁帳號分權列（帳號/角色/儲存/刪除） */
+    .role-grid { display:grid; grid-template-columns:1.4fr 1fr auto auto;
+                 gap:8px; align-items:end; }
+    /* 表格內的動作按鈕群（窄螢幕自動換行） */
+    /* 表單內「啟用…」滑動開關：原生 checkbox 隱藏、以 .track/.knob 呈現，勾選 = 綠 */
+    label.toggle { display:flex; align-items:center; gap:10px; cursor:pointer; text-transform:none;
+                   font-size:13px; color:var(--text); letter-spacing:0; }
+    label.toggle input { position:absolute; opacity:0; width:0; height:0; }
+    label.toggle .track { position:relative; flex:0 0 40px; width:40px; height:22px; border-radius:999px;
+                          background:var(--bg3); border:1px solid var(--border); transition:all .15s; }
+    label.toggle .knob { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+                         background:var(--text3); transition:left .15s, background .15s; }
+    label.toggle input:checked + .track { background:var(--allow); border-color:var(--allow); }
+    label.toggle input:checked + .track .knob { left:20px; background:#fff; }
+    label.toggle input:focus-visible + .track { outline:2px solid var(--accent); outline-offset:2px; }
+    .actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .actions.nowrap { flex-wrap:nowrap; }
+    /* 漢堡選單鈕（≤900px 才顯示）；置於 button 規則之後以覆蓋預設藍底 */
+    button.menu-btn { display:none; background:none; border:none; color:var(--text2);
+                      padding:4px 8px; }
+    button.menu-btn:hover { background:var(--bg3); }
+    .backdrop { display:none; }
+    /* 主題切換鈕：依目前主題顯示月亮（淺色時）或太陽（深色時） */
+    button.theme-btn { display:inline-flex; background:none; border:none; color:var(--text2);
+                       padding:4px 8px; border-radius:var(--radius); }
+    button.theme-btn:hover { background:var(--bg3); }
+    button.theme-btn .i-sun { display:none; }
+    html[data-theme="dark"] button.theme-btn .i-sun { display:block; }
+    html[data-theme="dark"] button.theme-btn .i-moon { display:none; }
+
+    @media (max-width:1100px) {
+      .grid { grid-template-columns:1fr 1fr; }
+      .fs-pair { grid-template-columns:1fr; }
+      /* 中和模板內 grid-column:1/4 之類的跨欄 inline 樣式 → 改為整列 */
+      .grid > [style*="grid-column"] { grid-column:1 / -1 !important; }
+      .two-col { grid-template-columns:1fr; }
+      .vc-grid { grid-template-columns:1fr 1fr; }
+      .role-grid { grid-template-columns:1fr 1fr; }
+    }
+
+    @media (max-width:900px) {
+      /* 側欄改為 off-canvas 抽屜 */
+      aside { position:fixed; top:0; left:0; bottom:0; z-index:50; min-height:0;
+              overflow-y:auto; transform:translateX(-100%); transition:transform .2s ease;
+              box-shadow:4px 0 24px rgba(10,14,28,.35); }
+      body.nav-open aside { transform:none; }
+      body.nav-open .backdrop { display:block; position:fixed; inset:0; z-index:40;
+                                background:rgba(10,14,28,.45); }
+      button.menu-btn { display:inline-flex; }
+      .topbar { padding:0 12px; gap:8px; }
+      .topbar h1 { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; min-width:0; }
+      .content { padding:14px; }
+      .card { padding:14px; }
+    }
+
+    @media (max-width:700px) {
+      .grid, .grid.g2 { grid-template-columns:1fr; }
+      .vc-grid { grid-template-columns:1fr; }
+      .role-grid { grid-template-columns:1fr; }
+      .tiles { grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:10px; }
+      .badge.vc { display:none; }
+      th, td { padding-left:8px; padding-right:8px; }
+    }
+  </style>
+</head>
+<body>
+  {% set path = request.url.path if request else '/' %}
+  <aside>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <span>SnapMan<small>Snapshot Manager</small></span>
+    </div>
+    <nav>
+      <a href="/" class="{{ 'active' if path == '/' }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        儀表板
+      </a>
+      {% if user_role != 'audit' %}
+      <a href="/jobs" class="{{ 'active' if path.startswith('/jobs') or path.startswith('/profiles') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        任務
+      </a>
+      {% endif %}
+      <a href="/sessions" class="{{ 'active' if path.startswith('/sessions') or path.startswith('/runs') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        工作階段
+      </a>
+      <a href="/calendar" class="{{ 'active' if path.startswith('/calendar') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
+        行事曆
+      </a>
+      <a href="/reports" class="{{ 'active' if path.startswith('/reports') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15v3"/><path d="M12 10v8"/><path d="M17 6v12"/></svg>
+        報表
+      </a>
+      {% if user_role != 'audit' %}
+      <a href="/capacity" class="{{ 'active' if path.startswith('/capacity') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        容量
+      </a>
+      {% endif %}
+      <a href="/logs" class="{{ 'active' if path.startswith('/logs') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+        記錄
+      </a>
+      {% if user_role != 'audit' %}
+      <a href="/settings" class="{{ 'active' if path.startswith('/settings') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        設定
+      </a>
+      {% endif %}
+    </nav>
+    <div class="side-foot">SnapMan</div>
+  </aside>
+
+  <div class="backdrop" onclick="document.body.classList.remove('nav-open')"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <button type="button" class="menu-btn" aria-label="開啟選單"
+              onclick="document.body.classList.toggle('nav-open')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <h1>{% block page_title %}{% endblock %}</h1>
+      <div class="topbar-right">
+        <button type="button" class="theme-btn" aria-label="切換深淺色主題"
+                title="切換深淺色主題" onclick="snapmanToggleTheme()">
+          <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+        <span class="badge vc" title="目前對接的 vCenter">{{ vcenter_host }}</span>
+        {% set _u = request.session.get('user') if request else None %}
+        {% if _u %}
+        <span class="muted">{{ _u.name }}</span>
+        <span class="badge role" title="登入角色（設定頁「帳號分權」管理）">{{ role_label }}</span>
+        <form method="post" action="/logout" style="display:inline;margin:0">
+          <button class="btn" type="submit">登出</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    <div class="content">{% block content %}{% endblock %}</div>
+  </div>
+</body>
+</html>

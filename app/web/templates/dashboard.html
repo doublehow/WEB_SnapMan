@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — 儀表板{% endblock %}
+{% block page_title %}儀表板{% endblock %}
+{% block content %}
+
+<div class="tiles">
+  <div class="tile">
+    <div class="t-icon">{{ icon('layers', 16) }}</div>
+    <div class="t-label">任務</div>
+    <div class="t-value">{{ stats.profiles }}</div>
+    <div class="t-sub">{{ stats.scheduled }} 個已排程</div>
+  </div>
+  <div class="tile {{ 'ok' if stats.today_failed == 0 and stats.today_success > 0 }}">
+    <div class="t-icon">{{ icon('check', 16) }}</div>
+    <div class="t-label">今日成功</div>
+    <div class="t-value">{{ stats.today_success }}</div>
+  </div>
+  <div class="tile {{ 'bad' if stats.today_failed > 0 }}">
+    <div class="t-icon">{{ icon('x', 16) }}</div>
+    <div class="t-label">今日失敗</div>
+    <div class="t-value">{{ stats.today_failed }}</div>
+  </div>
+  <div class="tile">
+    <div class="t-icon">{{ icon('drive', 16) }}</div>
+    <div class="t-label">保留副本</div>
+    <div class="t-value">{{ stats.copies }}</div>
+    <div class="t-sub">{{ stats.mounted }} 份掛載中</div>
+  </div>
+  <div class="tile">
+    <div class="t-icon">{{ icon('clock', 16) }}</div>
+    <div class="t-label">最近一次執行</div>
+    <div class="t-value" style="font-size:16px; padding-top:5px">
+      {% if stats.last %}<span class="status {{ stats.last.status }}">{{ stats.last.status }}</span>{% else %}—{% endif %}
+    </div>
+    <div class="t-sub">{{ stats.last.started_at if stats.last else '尚無執行' }}</div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="card" style="margin-bottom:18px">
+    <h2>近 30 天 每日成功 / 失敗</h2>
+    <svg viewBox="0 0 {{ charts.W }} {{ charts.H }}" style="width:100%; height:auto" role="img"
+         aria-label="近 30 天每日成功與失敗次數長條圖">
+      <style>.c-ok{fill:#16a34a}.c-bad{fill:#dc2626}
+             .grid{stroke:var(--border); stroke-opacity:.55; stroke-width:1}
+             .axis-t{font-size:10px; fill:var(--text3)}</style>
+      {% for y in charts.grid_ys %}<line class="grid" x1="{{ charts.L }}" x2="{{ charts.W - 6 }}" y1="{{ y }}" y2="{{ y }}"/>{% endfor %}
+      <line class="grid" x1="{{ charts.L }}" x2="{{ charts.W - 6 }}"
+            y1="{{ charts.baseline }}" y2="{{ charts.baseline }}" stroke-opacity="1"/>
+      <text class="axis-t" x="4" y="14">{{ charts.max_c }}</text>
+      {% for b in charts.bars %}
+      <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2" class="{{ b.cls }}">
+        <title>{{ b.tip }}</title>
+      </rect>
+      {% endfor %}
+      {% for l in charts.labels %}
+      <text class="axis-t" x="{{ l.x }}" y="{{ charts.H - 4 }}" text-anchor="middle">{{ l.text }}</text>
+      {% endfor %}
+    </svg>
+    <div class="muted" style="display:flex; gap:14px; margin-top:6px">
+      <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#16a34a"></span> 成功</span>
+      <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#dc2626"></span> 失敗 / 停止</span>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:18px">
+    <h2>近 30 天 每日工作流耗時（分鐘）</h2>
+    <svg viewBox="0 0 {{ charts.W }} {{ charts.H }}" style="width:100%; height:auto" role="img"
+         aria-label="近 30 天每日工作流耗時折線圖">
+      <style>.grid{stroke:var(--border); stroke-opacity:.55; stroke-width:1}
+             .axis-t{font-size:10px; fill:var(--text3)}</style>
+      {% for y in charts.grid_ys %}<line class="grid" x1="{{ charts.L }}" x2="{{ charts.W - 6 }}" y1="{{ y }}" y2="{{ y }}"/>{% endfor %}
+      <line class="grid" x1="{{ charts.L }}" x2="{{ charts.W - 6 }}"
+            y1="{{ charts.baseline }}" y2="{{ charts.baseline }}" stroke-opacity="1"/>
+      <text class="axis-t" x="4" y="14">{{ charts.max_m }}</text>
+      {% if charts.line_points %}
+      <polyline points="{{ charts.line_points }}" fill="none"
+                stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+      {% endif %}
+      {% for d in charts.dots %}
+      <circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" fill="var(--accent)"
+              stroke="var(--bg2)" stroke-width="2"><title>{{ d.tip }}</title></circle>
+      {% endfor %}
+      {% for l in charts.labels %}
+      <text class="axis-t" x="{{ l.x }}" y="{{ charts.H - 4 }}" text-anchor="middle">{{ l.text }}</text>
+      {% endfor %}
+    </svg>
+    <div class="muted" style="margin-top:6px">每日成功之「每日工作流」平均耗時；游標移到資料點看數值</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>近期工作階段</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>任務</th><th>類型</th><th>狀態</th><th>開始時間</th><th>耗時</th></tr></thead>
+    <tbody>
+      {% for r in recent %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td>
+        <td>{{ r.profile }}</td>
+        <td class="muted">{{ r.kind_label }}</td>
+        <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+        <td class="muted">{{ r.started_at }}</td>
+        <td class="muted">{{ r.duration }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">尚無執行紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div style="margin-top:10px"><a class="btn" href="/sessions">全部工作階段 {{ icon('right') }}</a></div>
+</div>
+
+{% endblock %}
