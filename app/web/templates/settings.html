@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — 設定{% endblock %}
+{% block page_title %}設定{% endblock %}
+{% block content %}
+
+{% if not can_write %}
+<div class="card" style="border-color:var(--warn)">
+  <span class="status stopped">唯讀</span>
+  您目前的角色為 <b>{{ role_label }}</b>，可檢視設定但無法變更。
+</div>
+{% endif %}
+
+{% if must_change_pw %}
+<div class="card" style="border-color:var(--deny)">
+  <span class="status failed">須變更密碼</span>
+  本機 admin 目前使用<b>初始或不符規則</b>的密碼，變更前無法使用其他功能。請於下方「本機管理員」輸入新密碼（至少 {{ admin_pw_min }} 字元）並儲存。
+</div>
+{% elif error %}
+<div class="card" style="border-color:var(--deny)">
+  <span class="status failed">錯誤</span> {{ error }}
+</div>
+{% endif %}
+{% if saved %}
+<div class="card" style="border-color:var(--ok)">
+  <span class="status success">已儲存</span>
+  設定已寫入 <span class="muted">config.json</span>，並即時套用（進行中的下一次執行生效）。
+</div>
+{% endif %}
+{% if tested %}
+<div class="card">
+  <span class="status pending">測試結果</span> {{ tested }}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>vCenter（各任務可綁定不同座）</h2>
+  {% for v in vcenters %}
+  <form method="post" action="/vcenters/{{ v.id }}/edit" class="vc-grid"
+        style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border)">
+    <div><label>名稱</label><input name="vc_name" value="{{ v.name }}" required></div>
+    <div><label>主機</label><input name="vc_host" value="{{ v.host }}" required></div>
+    <div><label>使用者</label><input name="vc_user" value="{{ v.user }}" required></div>
+    <div><label>密碼（留空不變更）</label>
+      <input type="password" name="vc_password" autocomplete="new-password"
+             placeholder="{% if v.has_password %}●●●●●●{% else %}（尚未設定）{% endif %}"></div>
+    <label style="display:flex; align-items:center; gap:6px; text-transform:none; margin:0 0 8px; cursor:pointer">
+      <input type="checkbox" name="vc_insecure" style="width:auto" {% if v.insecure %}checked{% endif %}>
+      略過 TLS 驗證{% if v.insecure %} <span class="status stopped" title="連線可被中間人攔截，含 vCenter 帳密與 VMDK 內容">未驗證</span>{% endif %}
+    </label>
+    {% if can_write %}
+    <button type="submit" class="btn">儲存</button>
+    <button type="submit" class="btn" formaction="/vcenters/{{ v.id }}/delete"
+            {% if v.in_use %}disabled title="仍被 {{ v.in_use }} 個任務使用"{% else %}
+            data-name="{{ v.name }}" onclick="return confirm('刪除 vCenter「' + this.dataset.name + '」？')"{% endif %}>刪除</button>
+    {% endif %}
+  </form>
+  {% else %}
+  <p class="muted">尚未設定任何 vCenter，請於下方新增。</p>
+  {% endfor %}
+
+  {% if can_write %}
+  <form method="post" action="/vcenters" class="vc-grid" style="margin-top:4px">
+    <div><label>名稱</label><input name="vc_name" placeholder="例：總部 vCenter" required></div>
+    <div><label>主機</label><input name="vc_host" placeholder="vcenter.example.local" required></div>
+    <div><label>使用者</label><input name="vc_user" placeholder="administrator@vsphere.local" required></div>
+    <div><label>密碼</label><input type="password" name="vc_password" autocomplete="new-password"></div>
+    <label style="display:flex; align-items:center; gap:6px; text-transform:none; margin:0 0 8px; cursor:pointer">
+      <input type="checkbox" name="vc_insecure" style="width:auto"> 略過 TLS 驗證（自簽憑證才勾）
+    </label>
+    <button type="submit">＋ 新增</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>帳號分權（帳號 → 角色）</h2>
+  <p class="muted" style="margin:0 0 12px">
+    AD 群組只控制「誰能登入」，登入後的權限由此表決定——
+    <b>Full Admin</b>：全功能；<b>Admin ReadOnly</b>：全頁面唯讀（不可執行/變更）；
+    <b>Audit</b>：僅儀表板 / 工作階段 / 行事曆 / 報表 / 記錄。
+    未列於此表的帳號套用下方 AD 區塊的「預設角色」；本機 admin 恆為 Full Admin（緊急備援）。
+  </p>
+  {% for r in account_roles %}
+  <form method="post" action="/roles/{{ r.id }}/edit" class="role-grid"
+        style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border)">
+    <div><label>帳號</label><input value="{{ r.username }}" disabled></div>
+    <div><label>角色</label>
+      <select name="role_value" {% if not can_write %}disabled{% endif %}>
+        {% for k, lbl in role_options.items() %}
+        <option value="{{ k }}" {% if r.role == k %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select></div>
+    {% if can_write %}
+    <button type="submit" class="btn">儲存</button>
+    <button type="submit" class="btn" formaction="/roles/{{ r.id }}/delete"
+            data-name="{{ r.username }}" onclick="return confirm('移除「' + this.dataset.name + '」的角色指派（回歸預設角色）？')">刪除</button>
+    {% endif %}
+  </form>
+  {% else %}
+  <p class="muted">尚未指派任何帳號，所有登入帳號套用「預設角色」。</p>
+  {% endfor %}
+  {% if can_write %}
+  <form method="post" action="/roles" class="role-grid" style="margin-top:4px">
+    <div><label>帳號（AD 帳號，如 sAMAccountName）</label>
+      <input name="role_username" placeholder="例：jsmith" required autocomplete="off"></div>
+    <div><label>角色</label>
+      <select name="role_value">
+        {% for k, lbl in role_options.items() %}
+        <option value="{{ k }}">{{ lbl }}</option>
+        {% endfor %}
+      </select></div>
+    <button type="submit">＋ 新增</button>
+  </form>
+  {% endif %}
+</div>
+
+<form method="post" action="/settings">
+
+  <div class="card">
+    <h2>Guest 憑證（VMware Tools 進 guest 執行命令用）</h2>
+    <div class="grid">
+      <div>
+        <label>Guest 使用者</label>
+        <input name="guest_user" value="{{ cfg.guest_user }}" placeholder="Administrator">
+      </div>
+      <div>
+        <label>Guest 密碼{% if cfg.has_guest_password %}（已設定，留空不變更）{% endif %}</label>
+        <input type="password" name="guest_password" autocomplete="new-password"
+               placeholder="{% if cfg.has_guest_password %}●●●●●●{% else %}（尚未設定）{% endif %}">
+      </div>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      此帳密會當作參數傳給 vCenter API（StartProgramInGuest），SnapMan 不會直接登入 VM。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>本機管理員（緊急備援登入）</h2>
+    {% if cfg.admin_pw_warn %}
+    <p class="status failed" style="display:inline-flex; align-items:center; gap:6px; margin-bottom:10px">
+      {{ icon('alert') }} {{ cfg.admin_pw_warn }}
+    </p>
+    {% endif %}
+    <div class="grid">
+      <div>
+        <label>admin 密碼（留空不變更；至少 {{ admin_pw_min }} 字元，不得為 admin）</label>
+        <input type="password" name="local_admin_password" autocomplete="new-password"
+               minlength="{{ admin_pw_min }}"
+               placeholder="{% if cfg.admin_pw_warn %}（請設定新密碼）{% else %}●●●●●●{% endif %}">
+      </div>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      帳號固定為 <b>admin</b>，恆為 Full Admin、不經 AD（防鎖死）。首次啟動由服務產生初始密碼寫入
+      <code>data/initial_admin_password.txt</code>，登入後強制在此變更（變更後自動刪檔）。
+      忘記密碼可在伺服器執行 <code>python -m app.set_admin_password</code>（<code>--disable</code> = 停用本機登入，僅 AD）。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>AD（NTLM）登入</h2>
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:6px">
+      <input type="checkbox" name="ad_enabled" style="width:auto"
+             {% if cfg.ad_enabled %}checked{% endif %}>
+      啟用 AD 登入（未啟用時僅本機管理員 admin 可登入）
+    </label>
+    <div class="grid">
+      <div>
+        <label>AD Domain（NetBIOS 名）</label>
+        <input name="ad_domain" value="{{ cfg.ad_domain }}" placeholder="例：CORP">
+      </div>
+      <div style="grid-column:2/4">
+        <label>AD 伺服器 IP（多台以逗號分隔）</label>
+        <input name="ad_servers" value="{{ cfg.ad_servers }}" placeholder="例：10.0.0.1, 10.0.0.2">
+      </div>
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:26px; cursor:pointer; text-transform:none">
+          <input type="checkbox" name="ad_use_ssl" style="width:auto"
+                 {% if cfg.ad_use_ssl %}checked{% endif %}> LDAPS（636，加密連線）
+        </label>
+        <small class="muted">未勾為 389 明文；AD 若強制 LDAP signing 須開啟</small>
+      </div>
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:26px; cursor:pointer; text-transform:none">
+          <input type="checkbox" name="ad_ssl_verify" style="width:auto"
+                 {% if cfg.ad_ssl_verify %}checked{% endif %}> 驗證 AD 憑證
+        </label>
+        <small class="muted">LDAPS 時生效；自簽 CA 未匯入本機信任才取消</small>
+      </div>
+      <div>
+        <label>Service Account 帳號</label>
+        <input name="ad_service_user" value="{{ cfg.ad_service_user }}" placeholder="例：svc_account">
+      </div>
+      <div>
+        <label>Service Account 密碼{% if cfg.has_ad_service_password %}（已設定，留空不變更）{% endif %}</label>
+        <input type="password" name="ad_service_password" autocomplete="new-password"
+               placeholder="{% if cfg.has_ad_service_password %}●●●●●●{% else %}（尚未設定）{% endif %}">
+      </div>
+      <div>
+        <label>允許登入的群組</label>
+        <input name="ad_allowed_group" value="{{ cfg.ad_allowed_group }}" placeholder="例：SnapManAdmins">
+      </div>
+      <div>
+        <label>預設角色（未在「帳號分權」表中的帳號）</label>
+        <select name="default_role">
+          {% for k, lbl in role_options.items() %}
+          <option value="{{ k }}" {% if cfg.default_role == k %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="grid-column:1/4">
+        <label>Base DN（留空自動偵測）</label>
+        <input name="ad_base_dn" value="{{ cfg.ad_base_dn }}" placeholder="DC=example,DC=com">
+      </div>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      驗證流程：Service Account 搜尋使用者 → 使用者帳密 bind 驗密 → 檢查是否屬於授權群組。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>告警與紀錄保留</h2>
+    <div class="grid">
+      <div style="grid-column:1/3">
+        <label>Webhook URL（POST {"text": ...}；Teams/Slack 等，留空停用）</label>
+        <input name="alert_webhook_url" value="{{ cfg.alert_webhook_url }}"
+               placeholder="https://..." autocomplete="off">
+      </div>
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:26px; cursor:pointer; text-transform:none">
+          <input type="checkbox" name="alert_on_success" style="width:auto"
+                 {% if cfg.alert_on_success %}checked{% endif %}>
+          成功也通知（預設僅失敗）
+        </label>
+      </div>
+      <div>
+        <label>SMTP 主機（留空停用郵件）</label>
+        <input name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="mail.example.com">
+      </div>
+      <div>
+        <label>SMTP 埠</label>
+        <input type="number" name="smtp_port" value="{{ cfg.smtp_port }}">
+      </div>
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:26px; cursor:pointer; text-transform:none">
+          <input type="checkbox" name="smtp_tls" style="width:auto"
+                 {% if cfg.smtp_tls %}checked{% endif %}> STARTTLS
+        </label>
+      </div>
+      <div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:26px; cursor:pointer; text-transform:none">
+          <input type="checkbox" name="smtp_tls_verify" style="width:auto"
+                 {% if cfg.smtp_tls_verify %}checked{% endif %}> 驗證郵件伺服器憑證
+        </label>
+        <small class="muted">STARTTLS 時生效；內部自簽才取消</small>
+      </div>
+      <div>
+        <label>SMTP 帳號（選填）</label>
+        <input name="smtp_user" value="{{ cfg.smtp_user }}" autocomplete="off">
+      </div>
+      <div>
+        <label>SMTP 密碼{% if cfg.has_smtp_password %}（已設定，留空不變更）{% endif %}</label>
+        <input type="password" name="smtp_password" autocomplete="new-password"
+               placeholder="{% if cfg.has_smtp_password %}●●●●●●{% endif %}">
+      </div>
+      <div>
+        <label>寄件者</label>
+        <input name="smtp_from" value="{{ cfg.smtp_from }}" placeholder="snapman@example.com">
+      </div>
+      <div style="grid-column:1/3">
+        <label>收件者（逗號分隔）</label>
+        <input name="smtp_to" value="{{ cfg.smtp_to }}" placeholder="ops@example.com, dba@example.com">
+      </div>
+      <div>
+        <label>執行紀錄保留天數（0 = 不清理）</label>
+        <input type="number" name="run_retention_days" value="{{ cfg.run_retention_days }}" min="0">
+      </div>
+      <div>
+        <label>全域同時執行上限</label>
+        <input type="number" name="max_concurrent_runs" value="{{ cfg.max_concurrent_runs }}" min="1" max="10">
+        <small class="muted">依上限排隊、排程自動補跑；共用同一台來源/目標 VM 的任務
+        一律自動互斥排隊（不受此上限放大影響），可安心調高</small>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      失敗一律通知（webhook / 郵件擇一或並用）；紀錄清理每天執行一次。
+      測試前請先儲存設定。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>顯示</h2>
+    <div class="grid">
+      <div>
+        <label>時區（IANA 名稱；留空 = 伺服器系統時區）</label>
+        <input name="timezone" value="{{ cfg.timezone }}" list="tz-list"
+               placeholder="Asia/Taipei" autocomplete="off">
+        <datalist id="tz-list">
+          <option value="Asia/Taipei"></option>
+          <option value="UTC"></option>
+          <option value="Asia/Tokyo"></option>
+          <option value="Asia/Shanghai"></option>
+          <option value="Asia/Singapore"></option>
+          <option value="America/New_York"></option>
+          <option value="America/Los_Angeles"></option>
+          <option value="Europe/London"></option>
+        </datalist>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      影響所有頁面的時間顯示（最近執行、步驟起訖時間、事件日誌時戳）；資料庫一律以 UTC 儲存。
+    </p>
+  </div>
+
+  {% if can_write %}<button type="submit">儲存設定</button>{% endif %}
+</form>
+
+{% if can_write %}
+<form method="post" action="/settings/test-alert" style="margin-top:10px">
+  <button type="submit" class="btn">{{ icon('bell') }} 發送測試通知（webhook / 郵件）</button>
+</form>
+{% endif %}
+
+<p class="muted" style="margin-top:14px">
+  設定儲存於專案根目錄的 <code>config.json</code>（含明碼帳密，已列入 .gitignore）。
+</p>
+
+{% endblock %}

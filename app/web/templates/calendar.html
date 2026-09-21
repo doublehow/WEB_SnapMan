@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — 行事曆{% endblock %}
+{% block page_title %}行事曆{% endblock %}
+{% block content %}
+
+<style>
+  /* 月曆（參考 WEB_ALMS）：固定 6 週網格、事件 chip、圖例 */
+  .cal-head { display:flex; align-items:center; gap:10px; margin-bottom:12px;
+              flex-wrap:wrap; }
+  .cal-head h3 { margin:0; font-size:16px; }
+  .cal-head .spacer { flex:1; }
+  .cal-legend { display:flex; gap:12px; font-size:12px; color:var(--text3);
+                flex-wrap:wrap; }
+  .cal-legend .sw { display:inline-block; width:10px; height:10px;
+                    border-radius:3px; margin-right:4px; vertical-align:-1px; }
+  .cal-wrap { overflow-x:auto; }
+  .cal { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px;
+         min-width:760px; }
+  .cal .dow { text-align:center; font-size:12px; color:var(--text3);
+              padding:4px 0 6px; font-weight:600; }
+  .cal .cell { background:var(--bg); border:1px solid var(--row-line);
+               border-radius:6px; min-height:88px; padding:4px 5px;
+               display:flex; flex-direction:column; gap:3px; }
+  .cal .cell.out { opacity:.42; }
+  .cal .cell.today { border-color:var(--accent); border-width:2px; }
+  .cal .dnum { font-size:11.5px; color:var(--text3); text-align:right;
+               font-variant-numeric:tabular-nums; }
+  .cal .cell.today .dnum { color:var(--accent); font-weight:700; }
+  .chip { display:block; font-size:11px; line-height:1.55; padding:1px 6px;
+          border-radius:6px; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; text-decoration:none; }
+  .c-success { color:#fff; background:var(--allow); }
+  .c-failed  { color:#fff; background:var(--deny); }
+  .c-stopped { color:var(--text2); background:var(--bg3);
+               border:1px solid var(--border); }
+  .c-running { color:#fff; background:var(--accent); }
+  .c-pending { color:#fff; background:var(--accent); opacity:.75; }
+  /* 排程（尚未執行）：虛線框 */
+  .c-sched { color:var(--text2); border:1px dashed var(--accent);
+             background:color-mix(in srgb, var(--accent) 10%, transparent); }
+</style>
+
+<div class="card">
+  <div class="cal-head">
+    <a class="btn" href="/calendar?ym={{ prev_m }}">{{ icon('left') }} 上月</a>
+    <h3>{{ title_ym }}</h3>
+    <a class="btn" href="/calendar?ym={{ next_m }}">下月 {{ icon('right') }}</a>
+    {% if not is_current_month %}<a class="btn" href="/calendar">回到本月</a>{% endif %}
+    <div class="spacer"></div>
+    <div class="cal-legend">
+      <span><span class="sw" style="background:var(--allow);"></span>成功</span>
+      <span><span class="sw" style="background:var(--deny);"></span>失敗</span>
+      <span><span class="sw" style="background:var(--bg3);border:1px solid var(--border);"></span>停止</span>
+      <span><span class="sw" style="background:var(--accent);"></span>執行中</span>
+      <span><span class="sw" style="border:1px dashed var(--accent);"></span>排程</span>
+    </div>
+  </div>
+
+  <div class="cal-wrap">
+  <div class="cal">
+    {% for d in ['日','一','二','三','四','五','六'] %}<div class="dow">{{ d }}</div>{% endfor %}
+    {% for week in weeks %}{% for c in week %}
+    <div class="cell {{ 'out' if not c.in_month }} {{ 'today' if c.is_today }}">
+      <div class="dnum">{{ c.day }}</div>
+      {% for r in c.runs %}
+      <a class="chip c-{{ r.status }}" href="/runs/{{ r.id }}"
+         title="Run #{{ r.id }} {{ r.profile }}（{{ r.kind_label }}）&#10;{{ r.time }} 開始，耗時 {{ r.duration }}&#10;狀態：{{ r.status }}{% if r.error %}&#10;{{ r.error }}{% endif %}">
+        {{- r.time }} {{ r.profile -}}
+      </a>
+      {% endfor %}
+      {% for s in c.scheds %}
+      <span class="chip c-sched"
+            title="{{ s.name }} 排程{% if s.mode == 'once' %}（一次性，執行後自動停用）{% else %}（每日）{% endif %}：{{ s.time }}">
+        ⏰ {{ s.time }} {{ s.name }}{% if s.mode == 'once' %} ①{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endfor %}{% endfor %}
+  </div>
+  </div>
+  <p class="muted" style="margin-top:8px">
+    實心 chip = 已執行的工作階段（點入詳情）；虛線 ⏰ = 尚未到點的排程（① = 一次性）。
+  </p>
+</div>
+
+{% endblock %}

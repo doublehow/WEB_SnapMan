@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+*.local
+config.json
+config.json.tmp
+
+# App data
+*.db
+*.sqlite3
+data/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# 部署包（git archive 產物，不進版控）
+*.zip
+
+# 內部需求文件（不進公開版控）
+req.md
+
+# 安全評估報告（含未修補項與環境細節，不入版控）
+SnapMan-SecurityAssessment-*.md
+
+# 本機 Claude Code 設定
+.claude/

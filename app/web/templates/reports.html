@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}SnapMan — 報表{% endblock %}
+{% block page_title %}報表{% endblock %}
+{% block content %}
+
+{% for p in profiles %}
+<div class="card">
+  <h2>{{ p.name }}</h2>
+  <div style="display:flex; gap:28px; flex-wrap:wrap; margin-bottom:14px">
+    <div><label style="margin:0">執行次數</label><div style="font-size:20px; font-weight:600">{{ p.total }}</div></div>
+    <div><label style="margin:0">成功率</label><div style="font-size:20px; font-weight:600">{{ p.rate }}</div></div>
+    <div><label style="margin:0">平均耗時（成功）</label><div style="font-size:20px; font-weight:600">{{ p.avg_duration }}</div></div>
+  </div>
+
+  {% if p.steps %}
+  <label>各步驟平均耗時（近 50 次成功的每日工作流）</label>
+  <div class="table-wrap" style="margin-bottom:14px">
+  <table>
+    <thead><tr><th>步驟</th><th>平均耗時</th></tr></thead>
+    <tbody>
+      {% for s in p.steps %}
+      {% set st = s.title|stepno %}
+      <tr><td>{% if st.no %}<span class="step-no">{{ st.no }}</span>{% endif %}{{ st.text }}</td>
+          <td class="muted">{{ s.avg }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <label>最近 20 次執行</label>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>#</th><th>類型</th><th>狀態</th><th>開始時間</th><th>耗時</th></tr></thead>
+    <tbody>
+      {% for r in p.recent %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td>
+        <td class="muted">{{ r.kind_label }}</td>
+        <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+        <td class="muted">{{ r.started_at }}</td>
+        <td class="muted">{{ r.duration }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">尚無執行紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="card"><p class="muted">尚無 Profile</p></div>
+{% endfor %}
+
+{% endblock %}

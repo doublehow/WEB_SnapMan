@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — {{ profile }} 副本{% endblock %}
+{% block page_title %}副本 — {{ profile }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>{{ profile }} — 副本（保留 {{ keep_copies }} 份）</h2>
+
+  {% if error %}
+  <div style="margin-bottom:12px; color:var(--deny); font-size:13px; display:flex; align-items:center; gap:6px">{{ icon('alert') }} {{ error }}</div>
+  {% endif %}
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>建立時間</th><th>狀態</th><th>路徑</th><th></th></tr></thead>
+    <tbody>
+      {% for c in copies %}
+      <tr>
+        <td class="muted" style="font-family:var(--mono); white-space:nowrap">{{ c.created_at }}</td>
+        <td>
+          {% if c.status == 'mounted' %}<span class="status success">掛載中</span>
+          {% elif c.status == 'kept' %}<span class="status pending">保留</span>
+          {% elif c.status == 'archived' %}<span class="status stopped">歸檔</span>
+          {% else %}<span class="status skipped">未掛載</span>{% endif %}
+        </td>
+        <td class="muted" style="word-break:break-all">{{ c.path }}
+          {% if not c.has_files %}<span class="muted">（無檔案清單，掛載時將即時向來源查詢）</span>{% endif %}
+        </td>
+        <td style="white-space:nowrap">
+          {% if c.status != 'mounted' and can_write %}
+          <form method="post" action="/profiles/{{ profile_id }}/copies/{{ c.id }}/mount"
+                style="margin:0; display:inline"
+                onsubmit="return confirm('掛載此副本會先卸下目前掛載中的 DB 與磁碟，確定？')">
+            <button type="submit">⤴ 掛載</button>
+          </form>
+          <form method="post" action="/profiles/{{ profile_id }}/copies/{{ c.id }}/delete"
+                style="margin:0; display:inline"
+                onsubmit="return confirm('將自 datastore 刪除此副本檔案，確定？')">
+            <button type="submit" class="btn">{{ icon('trash') }} 刪除</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">尚無副本紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted" style="margin-top:10px">
+    「掛載」= 卸下目前掛載的副本（保留檔案）→ 熱掛選定副本 → ATTACH + DBCC 驗證。
+    保留份數可於 Profile 編輯頁調整；超額的舊副本會在每日工作流成功後自動刪除。
+  </p>
+  <div style="margin-top:8px"><a class="btn" href="/jobs">{{ icon('left') }} 回任務</a></div>
+</div>
+
+{% endblock %}

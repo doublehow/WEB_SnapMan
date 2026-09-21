@@ -1,0 +1,17 @@
+{
+  "vcenter_host": "vcenter.example.local",
+  "vcenter_user": "administrator@vsphere.local",
+  "vcenter_password": "",
+  "vcenter_insecure": true,
+  "guest_user": "Administrator",
+  "guest_password": "",
+  "local_admin_password": "",
+
+  "ad_enabled": false,
+  "ad_domain": "EXAMPLE",
+  "ad_servers": ["10.0.0.1", "10.0.0.2"],
+  "ad_service_user": "svc_ldap",
+  "ad_service_password": "",
+  "ad_allowed_group": "LocalAdmins",
+  "ad_base_dn": "DC=example,DC=com"
+}

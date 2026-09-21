@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}SnapMan — 權限不足{% endblock %}
+{% block page_title %}權限不足{% endblock %}
+{% block content %}
+
+<div class="card" style="border-color:var(--warn)">
+  <h2>權限不足</h2>
+  <p style="margin:0 0 6px">
+    <span class="status stopped">403</span>&nbsp; {{ message }}
+  </p>
+  <p class="muted">
+    目前登入角色：<b>{{ role_label }}</b>。如需更高權限，請聯絡系統管理員於
+    設定頁「帳號分權」調整您的角色。
+  </p>
+  <div style="margin-top:10px"><a class="btn" href="/">{{ icon('left') }} 回儀表板</a></div>
+</div>
+
+{% endblock %}

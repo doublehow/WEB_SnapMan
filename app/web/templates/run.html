@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Run #{{ run_id }}{% endblock %}
+{% block page_title %}工作階段 #{{ run_id }} — {{ profile }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Run #{{ run_id }} — {{ profile }}</h2>
+  <p style="display:flex; align-items:center; gap:10px">
+    狀態：<span id="run-status" class="status {{ status }}">{{ status }}</span>
+    <span class="muted" id="bar-text">{{ percent }}%</span>
+    {% if status in ('pending', 'running') and can_write %}
+    <form method="post" action="/runs/{{ run_id }}/stop" style="margin:0 0 0 auto"
+          id="stop-form" onsubmit="return confirm('將於目前步驟結束（clone 中則立即取消）後安全停止並回滾，確定？')">
+      <button type="submit" class="btn">{{ icon('stop') }} 停止</button>
+    </form>
+    {% endif %}
+  </p>
+  <div style="background:var(--bg3); border:1px solid var(--border); border-radius:999px; height:12px; overflow:hidden">
+    <div id="bar" style="height:100%; width:{{ percent }}%; background:var(--accent); transition:width .4s"></div>
+  </div>
+  {% if error %}<p class="status failed" style="display:inline-block">{{ error }}</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>工作流步驟</h2>
+  <div class="table-wrap">
+  <table style="min-width:560px">
+    <thead>
+      <tr><th>步驟</th><th>狀態</th><th>起始時間</th><th>完成時間</th><th>訊息</th></tr>
+    </thead>
+    <tbody id="steps">
+      {% for s in steps %}
+      {% set st = s.title|stepno %}
+      <tr id="step-{{ s.seq }}">
+        <td style="width:40%">{% if st.no %}<span class="step-no">{{ st.no }}</span>{% endif %}{{ st.text }}</td>
+        <td style="width:9%"><span class="status {{ s.status }}" id="st-{{ s.seq }}">{{ s.status }}</span></td>
+        <td class="muted" style="width:9%; font-family:var(--mono)" id="t0-{{ s.seq }}">{{ s.started_at }}</td>
+        <td class="muted" style="width:9%; font-family:var(--mono)" id="t1-{{ s.seq }}">{{ s.finished_at }}</td>
+        <td class="muted" id="msg-{{ s.seq }}">{{ s.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>事件日誌</h2>
+  <div id="log" class="muted" style="font-family:ui-monospace,monospace; max-height:220px; overflow:auto">
+    {%- for e in history %}
+    <div class="log-ln">{{ e.time }} [{{ e.status }}] {% if e.no %}<span class="step-no sm">{{ e.no }}</span>{% endif %}{{ e.text }}{% if e.message %} — {{ e.message }}{% endif %}</div>
+    {%- endfor %}
+  </div>
+</div>
+
+<script>
+  const runId = {{ run_id }};
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${proto}://${location.host}/ws/runs/${runId}`);
+  const logEl = document.getElementById("log");
+  logEl.scrollTop = logEl.scrollHeight;  // 歷史日誌先捲到底，接續即時串流
+
+  // 步驟編號 ①~⑩ → 綠底方塊徽章（與步驟表同一套樣式；DOM 組裝避免注入）
+  const CIRCLED = {"①":"1","②":"2","③":"3","④":"4","⑤":"5",
+                   "⑥":"6","⑦":"7","⑧":"8","⑨":"9","⑩":"10"};
+  function appendTitle(container, title) {
+    let t = (title || "").trim();
+    if (t && CIRCLED[t[0]] !== undefined) {
+      let no = CIRCLED[t[0]]; t = t.slice(1);
+      if (t.startsWith("+")) { no += "+"; t = t.slice(1); }
+      const b = document.createElement("span");
+      b.className = "step-no sm"; b.textContent = no;
+      container.appendChild(b);
+      t = t.trim();
+    }
+    container.appendChild(document.createTextNode(t));
+  }
+  function logLine(build) {
+    const d = document.createElement("div");
+    d.className = "log-ln";
+    build(d);
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function log(line) { logLine(d => { d.textContent = line; }); }
+  function logStep(e) {
+    logLine(d => {
+      d.appendChild(document.createTextNode(
+        (e.time ? e.time + " " : "") + "[" + e.status + "] "));
+      appendTitle(d, e.title);
+      if (e.message) d.appendChild(document.createTextNode(" — " + e.message));
+    });
+  }
+
+  // 進度條：整體 = 完成步驟數/總步驟；執行中步驟若回報百分比（④ clone），
+  // 以其占比內插，讓長步驟期間進度條持續前進
+  const totalSteps = {{ steps|length }};
+  let doneCount = {{ done_count }};
+  let stepPercent = 0;
+  function renderBar() {
+    const pct = Math.min(100, Math.round((doneCount + stepPercent / 100) * 100 / totalSteps));
+    document.getElementById("bar").style.width = pct + "%";
+    document.getElementById("bar-text").textContent = pct + "%";
+  }
+
+  ws.onopen = () => log("— 已連線，等待進度 —");
+  ws.onmessage = (ev) => {
+    const e = JSON.parse(ev.data);
+    if (e.type === "step") {
+      const st = document.getElementById("st-" + e.seq);
+      const msg = document.getElementById("msg-" + e.seq);
+      if (st) { st.textContent = e.status; st.className = "status " + e.status; }
+      if (msg && e.message) msg.textContent = e.message;
+      if (e.time) {
+        const cell = document.getElementById((e.status === "running" ? "t0-" : "t1-") + e.seq);
+        if (cell) cell.textContent = e.time;
+      }
+      if (e.status === "done") { doneCount += 1; stepPercent = 0; renderBar(); }
+      logStep(e);
+    } else if (e.type === "progress") {
+      stepPercent = e.percent;
+      renderBar();
+      const msg = document.getElementById("msg-" + e.seq);
+      if (msg) msg.textContent = `進行中… ${e.percent}%`;
+    } else if (e.type === "run") {
+      const rs = document.getElementById("run-status");
+      rs.textContent = e.status; rs.className = "status " + e.status;
+      if (e.status === "success") { doneCount = totalSteps; stepPercent = 0; renderBar(); }
+      if (e.status !== "running") {
+        const sf = document.getElementById("stop-form");
+        if (sf) sf.remove();
+      }
+      if (e.error) log("錯誤：" + e.error);
+    } else if (e.type === "log") {
+      log(e.message);
+    } else if (e.type === "done") {
+      log("— 結束 —"); ws.close();
+    }
+  };
+  ws.onerror = () => log("WebSocket 連線錯誤");
+</script>
+
+{% endblock %}
